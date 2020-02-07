@@ -5,27 +5,15 @@ const session = require('express-session');
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
-const note_schema = new Schema({
-    text: {
-        type: String,
-        required: true
-    }
-});
-const note_model = new mongoose.model('note', note_schema);
 
+//Models
+const user_model = require('./models/user-model.js');
+const note_model = require('./models/note-model.js');
 
-const user_schema = new Schema({
-    name: {
-        type: String,
-        required: true
-    },
-    notes: [{
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'note',
-        req: true
-    }]
-});
-const user_model = mongoose.model('user', user_schema);
+//Views
+const auth_views = require('./views/auth-views.js');
+const note_views = require('./views/note-views.js');
+
 
 let app = express();
 
@@ -75,31 +63,40 @@ app.get('/', is_logged_handler, (req, res, next) => {
         .execPopulate()
         .then(() => {
             console.log('user:', user);
-            res.write(`
-        <html>
-        <body>
-            Logged in as user: ${user.name}
-            <form action="/logout" method="POST">
-                <button type="submit">Log out</button>
-            </form>`);
-            user.notes.forEach((note) => {
-                res.write(note.text);
-            });
-
-            res.write(`
-            <form action="/add-note" method="POST">
-                <input type="text" name="note">
-                <button type="submit">Add note</button>
-            </form>
-            
-    
-        </html>
-        </body>
-        `);
-            res.end();
+            let data = {
+                user_name: user.name,
+                notes: user.notes
+            };
+            let html = note_views.notes_view(data);
+            res.send(html);
         });
+});
 
+app.post('/delete-note', (req, res, next) => {
+    const user = req.user;
+    const note_id_to_delete = req.body.note_id;
 
+    //Remove note from user.notes
+    const updated_notes = user.notes.filter((note_id) => {
+        return note_id != note_id_to_delete;
+    });
+    user.notes = updated_notes;
+
+    //Remove note object from database
+    user.save().then(() => {
+        note_model.findByIdAndRemove(note_id_to_delete).then(() => {
+            res.redirect('/');
+        });
+    });
+});
+
+app.get('/note/:id', (req, res, next) => {
+    const note_id = req.params.id;
+    note_model.findOne({
+        _id: note_id
+    }).then((note) => {
+        res.send(note.text);
+    });
 });
 
 app.post('/add-note', (req, res, next) => {
@@ -124,21 +121,7 @@ app.post('/logout', (req, res, next) => {
 
 app.get('/login', (req, res, next) => {
     console.log('user: ', req.session.user)
-    res.write(`
-    <html>
-    <body>
-        <form action="/login" method="POST">
-            <input type="text" name="user_name">
-            <button type="submit">Log in</button>
-        </form>
-        <form action="/register" method="POST">
-            <input type="text" name="user_name">
-            <button type="submit">Register</button>
-        </form>
-    </body>
-    <html>
-    `);
-    res.end();
+    res.send(auth_views.login_view());
 });
 
 app.post('/login', (req, res, next) => {
